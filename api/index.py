@@ -25,13 +25,44 @@ for var in required_vars:
 
 logger.info("=" * 50)
 
-# Import FastAPI app
+# Import FastAPI app with detailed error handling
 try:
     from main import app
     logger.info("✓ Successfully imported main app")
+    handler = app
 except Exception as e:
-    logger.error(f"✗ Failed to import main app: {e}")
-    raise
-
-# Vercel will use this app variable
-handler = app
+    logger.error(f"✗ Failed to import main app: {e}", exc_info=True)
+    
+    # Create a minimal FastAPI app for error reporting
+    from fastapi import FastAPI
+    from fastapi.middleware.cors import CORSMiddleware
+    
+    app = FastAPI(title="TensorTrade - Startup Error")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    
+    @app.get("/health")
+    def health_error():
+        return {
+            "status": "error",
+            "error": "App failed to start",
+            "message": str(e),
+            "environment": {
+                "groq_key": "✓" if os.getenv("GROQ_API_KEY") else "✗",
+                "openrouter_key": "✓" if os.getenv("OPENROUTER_API_KEY") else "✗",
+                "mistral_key": "✓" if os.getenv("MISTRAL_API_KEY") else "✗",
+            },
+            "help": "Set environment variables: GROQ_API_KEY, OPENROUTER_API_KEY, MISTRAL_API_KEY"
+        }
+    
+    @app.get("/")
+    def root_error():
+        return health_error()
+    
+    handler = app
+    logger.info("✓ Created fallback error app")
