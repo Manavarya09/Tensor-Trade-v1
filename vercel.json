@@ -2,7 +2,7 @@
   "version": 2,
   "builds": [
     {
-      "src": "api/index.py",
+      "src": "api/test.py",
       "use": "@vercel/python"
     },
     {
@@ -21,27 +21,27 @@
     },
     {
       "src": "/api/(.*)",
-      "dest": "api/index.py"
+      "dest": "api/test.py"
     },
     {
       "src": "/health",
-      "dest": "api/index.py"
+      "dest": "api/test.py"
     },
     {
       "src": "/analyze-asset",
-      "dest": "api/index.py"
+      "dest": "api/test.py"
     },
     {
       "src": "/run-agents",
-      "dest": "api/index.py"
+      "dest": "api/test.py"
     },
     {
       "src": "/docs",
-      "dest": "api/index.py"
+      "dest": "api/test.py"
     },
     {
       "src": "/openapi.json",
-      "dest": "api/index.py"
+      "dest": "api/test.py"
     },
     {
       "src": "/",
