@@ -486,5 +486,27 @@ async def get_council_analysis(symbol: str, economic_context: str = "") -> Dict:
     Usage:
         result = await get_council_analysis("AAPL", economic_context="Earnings tomorrow")
     """
-    engine = DebateEngine()
-    return await engine.debate_move_async(symbol, economic_context)
+    try:
+        engine = DebateEngine()
+        return await engine.debate_move_async(symbol, economic_context)
+    except ValueError as e:
+        # Handle missing API keys gracefully
+        error_msg = str(e)
+        logger.error(f"Cannot initialize LLM council: {error_msg}")
+        
+        # Return a stub response indicating the service is unavailable
+        from ..models.schemas import AgentArgument, ConfidenceLevel
+        
+        return {
+            "agent_arguments": [],
+            "consensus_points": [],
+            "disagreement_points": [],
+            "judge_summary": f"⚠️ LLM Council Unavailable: {error_msg}",
+            "market_context": {
+                "symbol": symbol,
+                "price": 0,
+                "move_pct": 0,
+                "move_direction": "UNKNOWN",
+                "volume": 0
+            }
+        }
