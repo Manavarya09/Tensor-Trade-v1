@@ -1,0 +1,370 @@
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import List, Dict, Any, Optional
+import asyncio
+import logging
+
+# Import agents
+from agents.behaviour_agent import BehaviorMonitorAgent
+from agents.narrator import NarratorAgent
+from agents.persona import PersonaAgent
+from agents.moderator import ModeratorAgent
+
+# Import LLM Council
+from llm_council.services.debate_engine import get_council_analysis
+
+# Import services
+from services.economic_calendar import EconomicCalendarService
+from services.trade_history import get_trade_history_service
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+app = FastAPI(title="Multi-Agent Trading Psychology API")
+
+# Add CORS middleware to allow frontend requests
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, specify exact origins
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+class MarketWatcherAgent:
+    """
+    Market analysis using 5-agent LLM debate council.
+    Provides diverse perspectives from macro, fundamental, flow, technical, and skeptic agents.
+    """
+    
+    async def run_async(self, context: dict) -> dict:
+        """Async version for LLM council integration."""
+        try:
+            # Extract asset symbol from market_event or context
+            asset = context.get("asset", "AAPL")  # Default to AAPL if not specified
+            
+            # Get economic calendar data
+            try:
+                economic_service = EconomicCalendarService()
+                economic_data = economic_service.get_stock_events(asset)
+                economic_summary = economic_service.get_market_summary(asset)
+                
+                # Add to context for downstream agents
+                context["economic_calendar"] = economic_data
+                context["economic_summary"] = economic_summary
+                
+                logger.info(f"Economic calendar: {economic_summary[:100]}...")
+            except Exception as e:
+                logger.warning(f"Could not fetch economic data: {e}")
+                economic_summary = ""
+            
+            # Extract symbol if it's a derivative asset like "Boom 500"
+            # For now, we'll use a mapping for synthetic indices
+            symbol_mapping = {
+                "Boom 500": "SPY",  # S&P 500 ETF as proxy
+                "Boom 1000": "SPY",
+                "Crash 500": "VIXY",  # Volatility ETF
+                "Volatility 75": "VXX",
+                "Step Index": "DIA",  # Dow Jones ETF
+            }
+            
+            symbol = symbol_mapping.get(asset, asset)
+            
+            logger.info(f"Running LLM council analysis for {symbol}...")
+            
+            # Get 5-agent council debate with economic context
+            debate_result = await get_council_analysis(symbol, economic_context=economic_summary)
+            
+            # Format market opinions from all 5 agents
+            market_opinions = []
+            for arg in debate_result["agent_arguments"]:
+                opinion = f"{arg.agent_name} ({arg.confidence.value}): {arg.thesis}"
+                market_opinions.append(opinion)
+            
+            # Add council results to context
+            context["market_opinions"] = market_opinions
+            context["council_debate"] = debate_result
+            context["consensus_points"] = [cp.statement for cp in debate_result["consensus_points"]]
+            context["disagreement_topics"] = [dp.topic for dp in debate_result["disagreement_points"]]
+            context["judge_summary"] = debate_result["judge_summary"]
+            
+            # Extract market context
+            mc = debate_result["market_context"]
+            context["asset"] = symbol
+            context["price_change_pct"] = f"{abs(mc['move_pct']):.2f}"
+            context["move_direction"] = mc["move_direction"]
+            context["current_price"] = mc["price"]
+            context["volume"] = mc["volume"]
+            
+            logger.info(f"Council analysis complete: {len(market_opinions)} agents analyzed {symbol}")
+            
+        except Exception as e:
+            logger.error(f"MarketWatcherAgent error: {e}")
+            # Fallback to basic context
+            context["market_opinions"] = [f"Error getting council analysis: {str(e)}"]
+            context["asset"] = context.get("asset", "UNKNOWN")
+            context["price_change_pct"] = "0.0"
+        
+        return context
+    
+    def run(self, context: dict) -> dict:
+        """Sync wrapper for the async method."""
+        return asyncio.run(self.run_async(context))
+
+
+class Trade(BaseModel):
+    timestamp: str
+    symbol: str  
+    action: str
+    price: float
+    pnl: float
+    status: str
+
+
+class RunAgentsRequest(BaseModel):
+    market_event: str
+    user_trades: List[Trade]
+    persona_style: str = "professional"
+
+
+@app.post("/analyze-asset")
+async def analyze_asset(asset: str, user_id: Optional[str] = "default_user"):
+    """
+    Simplified endpoint - only requires asset symbol.
+    Automatically fetches trade history, economic calendar, and runs all agents.
+    
+    Args:
+        asset: Stock symbol (e.g., "SPY", "AAPL", "TSLA")
+        user_id: Optional user identifier for database lookup
+        
+    Returns:
+        Complete multi-agent analysis with economic calendar impacts
+    """
+    logger.info(f"Starting automated analysis for {asset} (user: {user_id})")
+    
+    try:
+        # 1. Fetch trade history from database (currently synthetic)
+        trade_service = get_trade_history_service()
+        trade_summary = trade_service.get_trading_summary(asset, user_id)
+        user_trades = trade_summary["trades"]
+        
+        logger.info(f"Found {len(user_trades)} trades for {asset}")
+        
+        # 2. Get economic calendar and news
+        economic_service = EconomicCalendarService()
+        economic_data = economic_service.get_stock_events(asset)
+        economic_summary = economic_service.get_market_summary(asset)
+        
+        logger.info(f"Economic events: {economic_summary[:100]}...")
+        
+        # 3. Auto-select persona based on trading performance
+        persona_style = trade_service.auto_select_persona(user_trades)
+        logger.info(f"Auto-selected persona: {persona_style}")
+        
+        # 4. Generate market event description
+        market_event = f"{asset} analysis requested with economic calendar integration"
+        
+        # 5. Build context for agent pipeline
+        context = {
+            "market_event": market_event,
+            "user_trades": user_trades,
+            "persona_style": persona_style,
+            "asset": asset,
+            "user_id": user_id,
+            "trade_summary": trade_summary,
+            "economic_calendar": economic_data,
+            "economic_summary": economic_summary,
+            "auto_generated": True
+        }
+        
+        # 6. Run agent pipeline
+        agent_flow = [
+            ("BehaviorMonitorAgent", BehaviorMonitorAgent, False),
+            ("MarketWatcherAgent", MarketWatcherAgent, True),
+            ("NarratorAgent", NarratorAgent, False),
+            ("PersonaAgent", PersonaAgent, False),
+            ("ModeratorAgent", ModeratorAgent, False)
+        ]
+        
+        for agent_name, agent_cls, is_async in agent_flow:
+            try:
+                logger.info(f"Running {agent_name}...")
+                agent = agent_cls ()
+                
+                if is_async:
+                    context = await agent.run_async(context)
+                else:
+                    context = agent.run(context)
+                    
+                logger.info(f"✓ {agent_name} completed")
+                
+            except Exception as e:
+                logger.error(f"✗ {agent_name} failed: {e}")
+                context[f"{agent_name}_error"] = str(e)
+        
+        # 7. Format response
+        response = {
+            "asset": asset,
+            "user_id": user_id,
+            "analysis_type": "automated",
+            "persona_selected": persona_style,
+            
+            # Trade summary
+            "trade_history": {
+                "total_trades": trade_summary["total_trades"],
+                "total_pnl": trade_summary["total_pnl"],
+                "win_rate": trade_summary["win_rate"],
+                "last_trade": trade_summary.get("last_trade")
+            },
+            
+            # Economic calendar impacts
+            "economic_calendar": {
+                "earnings": economic_data.get("earnings_calendar", {}),
+                "recent_news": economic_data.get("recent_news", [])[:3],
+                "economic_events": economic_data.get("economic_events", []),
+                "summary": economic_summary
+            },
+            
+            # Agent outputs
+            "behavioral_analysis": {
+                "flags": context.get("behavior_flags", []),
+                "insights": context.get("insights", [])
+            },
+            
+            "market_analysis": {
+                "council_opinions": context.get("market_opinions", []),
+                "consensus": context.get("consensus_points", []),
+                "disagreements": context.get("disagreement_topics", []),
+                "judge_summary": context.get("judge_summary", ""),
+                "market_context": {
+                    "price": context.get("current_price"),
+                    "move_direction": context.get("move_direction"),
+                    "change_pct": context.get("price_change_pct"),
+                    "volume": context.get("volume")
+                }
+            },
+            
+            "narrative": {
+                "summary": context.get("summary", ""),
+                "styled_message": context.get("final_message", ""),
+                "moderated_output": context.get("moderated_output", "")
+            },
+            
+            # Metadata
+            "timestamp": economic_data.get("timestamp"),
+            "errors": {k: v for k, v in context.items() if k.endswith("_error")}
+        }
+        
+        logger.info(f"Analysis complete for {asset}")
+        return response
+        
+    except Exception as e:
+        logger.error(f"Analysis failed for {asset}: {e}")
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+
+
+@app.post("/run-agents")
+async def run_agents(request: RunAgentsRequest):
+    """
+    LEGACY: Run the full multi-agent pipeline with custom inputs.
+    For simplified usage, use /analyze-asset endpoint instead.
+    
+    Pipeline:
+        1. BehaviorMonitorAgent - Detects trading psychology patterns
+        2. MarketWatcherAgent - 5 LLM debate council (macro, fundamental, flow, technical, skeptic)
+        3. NarratorAgent - Generates AI-powered session summary
+        4. PersonaAgent - Applies personality styling
+        5. ModeratorAgent - Final moderation and safety
+    """
+    
+    logger.info(f"Starting agent pipeline for {request.market_event}")
+    
+    # Convert request to context dictionary
+    context = {
+        "market_event": request.market_event,
+        "user_trades": [trade.model_dump() for trade in request.user_trades],
+        "persona_style": request.persona_style
+    }
+    
+    # Running agents in sequence
+    agent_flow = [
+        ("BehaviorMonitorAgent", BehaviorMonitorAgent, False),
+        ("MarketWatcherAgent", MarketWatcherAgent, True),
+        ("NarratorAgent", NarratorAgent, False),
+        ("PersonaAgent", PersonaAgent, False),
+        ("ModeratorAgent", ModeratorAgent, False)
+    ]
+    
+    for agent_name, agent_cls, is_async in agent_flow:
+        try:
+            logger.info(f"Running {agent_name}...")
+            agent = agent_cls()
+            
+            if is_async:
+                context = await agent.run_async(context)
+            else:
+                context = agent.run(context)
+                
+            logger.info(f"✓ {agent_name} completed")
+            
+        except Exception as e:
+            logger.error(f"✗ {agent_name} failed: {e}")
+            context[f"{agent_name}_error"] = str(e)
+    
+    return {
+        "message": "Multi-agent pipeline completed",
+        "result": context,
+        "agents_run": len(agent_flow)
+    }
+
+
+@app.get("/")
+def root():
+    """Root endpoint with API info."""
+    return {
+        "message": "Multi-Agent Trading Psychology API",
+        "version": "2.0.0",
+        "endpoints": {
+            "/analyze-asset": "🚀 NEW - Simplified analysis (asset only)",
+            "/run-agents": "Full agent pipeline (custom inputs)",
+            "/health": "Health check",
+            "/docs": "API documentation"
+        },
+        "agents": {
+            "BehaviorMonitorAgent": "Detects 10 behavioral trading patterns",
+            "MarketWatcherAgent": "5 LLM debate council (Macro, Fundamental, Flow, Technical, Skeptic)",
+            "NarratorAgent": "AI-powered session summaries with trends",
+            "PersonaAgent": "Personality styling",
+            "ModeratorAgent": "Final moderation"
+        },
+        "features": {
+            "economic_calendar": "Automated earnings and economic event tracking",
+            "trade_history": "Automatic trade history fetching (DB integration ready)",
+            "auto_persona": "Intelligent persona selection based on performance"
+        }
+    }
+
+
+@app.get("/health")
+def health_check():
+    """Health check endpoint."""
+    return {
+        "status": "healthy",
+        "version": "2.0.0",
+        "services": {
+            "behavior_monitor": "operational",
+            "market_watcher": "operational (5 LLM council)",
+            "narrator": "operational",
+            "persona": "operational",
+            "moderator": "operational",
+            "economic_calendar": "operational",
+            "trade_history": "operational (synthetic)"
+        }
+    }
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
