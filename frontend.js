@@ -1,0 +1,789 @@
+// Trading Analyst Dashboard - Deriv Hackathon
+// Professional Trading Intelligence Platform
+
+// API Configuration
+const API_BASE_URL = 'http://localhost:8000';
+let currentAnalysisData = null;
+let isAnalyzing = false;
+
+const app = document.createElement('div');
+app.id = 'deriv-ai-dashboard';
+app.style.cssText = `
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #0a0b12;
+    color: #ffffff;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+`;
+
+// Add global styles
+const style = document.createElement('style');
+style.textContent = `
+    @keyframes pulse {
+        0% { opacity: 1; }
+        50% { opacity: 0.6; }
+        100% { opacity: 1; }
+    }
+    
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .gradient-text {
+        background: linear-gradient(90deg, #ff4444, #ff8888);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+    
+    .card {
+        background: rgba(18, 20, 30, 0.9);
+        border: 1px solid rgba(255, 68, 68, 0.15);
+        backdrop-filter: blur(10px);
+    }
+    
+    .risk-high { color: #ff4444; }
+    .risk-medium { color: #ffbb44; }
+    .risk-low { color: #44ff88; }
+    
+    .status-indicator {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        display: inline-block;
+        margin-right: 6px;
+    }
+    
+    .status-live { background: #ff4444; animation: pulse 2s infinite; }
+    .status-active { background: #44ff88; }
+    .status-neutral { background: #ffbb44; }
+    
+    ::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+    }
+    
+    ::-webkit-scrollbar-track {
+        background: rgba(255, 68, 68, 0.1);
+        border-radius: 3px;
+    }
+    
+    ::-webkit-scrollbar-thumb {
+        background: #ff4444;
+        border-radius: 3px;
+    }
+`;
+
+document.head.appendChild(style);
+
+// Header
+const header = document.createElement('header');
+header.style.cssText = `
+    background: rgba(10, 11, 18, 0.95);
+    border-bottom: 1px solid rgba(255, 68, 68, 0.2);
+    padding: 20px 40px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    backdrop-filter: blur(10px);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+`;
+
+const logoSection = document.createElement('div');
+logoSection.style.cssText = `
+    display: flex;
+    align-items: center;
+    gap: 20px;
+`;
+
+const logo = document.createElement('div');
+logo.innerHTML = `
+    <svg width="40" height="40" viewBox="0 0 40 40">
+        <defs>
+            <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#ff4444"/>
+                <stop offset="100%" stop-color="#ff0000"/>
+            </linearGradient>
+        </defs>
+        <rect width="40" height="40" rx="10" fill="url(#logoGrad)"/>
+        <path d="M12 12 L28 28 M12 28 L28 12" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>
+    </svg>
+`;
+
+const title = document.createElement('div');
+title.innerHTML = `
+    <h1 style="margin: 0; font-size: 24px; font-weight: 800;">
+        <span class="gradient-text">NERAL TRADE</span>
+        <span style="color: #8899aa; font-size: 14px; font-weight: 400; margin-left: 10px;">INTELLIGENT TRADING ANALYST</span>
+    </h1>
+`;
+
+logoSection.appendChild(logo);
+logoSection.appendChild(title);
+
+const statusIndicator = document.createElement('div');
+statusIndicator.style.cssText = `
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+    color: #44ff88;
+    background: rgba(68, 255, 136, 0.1);
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: 1px solid rgba(68, 255, 136, 0.2);
+`;
+
+statusIndicator.innerHTML = `
+    <span class="status-indicator status-live"></span>
+    LIVE MARKETS • REALTIME ANALYSIS
+`;
+
+header.appendChild(logoSection);
+header.appendChild(statusIndicator);
+
+// Main Dashboard Grid
+const dashboardGrid = document.createElement('div');
+dashboardGrid.style.cssText = `
+    display: grid;
+    grid-template-columns: 300px 1fr 400px;
+    gap: 20px;
+    padding: 30px;
+    flex: 1;
+    max-width: 1920px;
+    margin: 0 auto;
+    width: 100%;
+    box-sizing: border-box;
+`;
+
+// Left Panel - Analysis Setup
+const leftPanel = document.createElement('div');
+leftPanel.style.cssText = `
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+`;
+
+const createCard = (title, content, options = {}) => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.style.cssText = `
+        border-radius: 12px;
+        padding: ${options.padding || '24px'};
+        animation: fadeIn 0.5s ease;
+        ${options.minHeight ? `min-height: ${options.minHeight};` : ''}
+        ${options.height ? `height: ${options.height};` : ''}
+    `;
+    
+    const cardHeader = document.createElement('div');
+    cardHeader.style.cssText = `
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+        border-bottom: 1px solid rgba(255, 68, 68, 0.1);
+        padding-bottom: 12px;
+    `;
+    
+    const titleEl = document.createElement('h3');
+    titleEl.style.cssText = `
+        margin: 0;
+        font-size: 14px;
+        text-transform: uppercase;
+        letter-spacing: 1.5px;
+        color: #ff8888;
+        font-weight: 600;
+    `;
+    titleEl.textContent = title;
+    
+    cardHeader.appendChild(titleEl);
+    
+    if (options.badge) {
+        const badge = document.createElement('span');
+        badge.style.cssText = `
+            background: rgba(255, 68, 68, 0.2);
+            color: #ff8888;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 600;
+            border: 1px solid rgba(255, 68, 68, 0.3);
+        `;
+        badge.textContent = options.badge;
+        cardHeader.appendChild(badge);
+    }
+    
+    card.appendChild(cardHeader);
+    card.appendChild(content);
+    
+    return card;
+};
+
+// Assistant Card
+const assistantContent = document.createElement('div');
+assistantContent.innerHTML = `
+    <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 20px;">
+        <div style="width: 48px; height: 48px; border-radius: 50%; background: linear-gradient(135deg, #ff4444, #ff0000); display: flex; align-items: center; justify-content: center;">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+                <path d="M19 4L5 20M5 4L19 20" stroke-linecap="round"/>
+            </svg>
+        </div>
+        <div>
+            <div style="font-size: 16px; font-weight: 600; color: #ffffff;">AI Assistant</div>
+            <div id="assistant-status" style="font-size: 12px; color: #8899aa;">Ready for Analysis</div>
+        </div>
+    </div>
+    <div style="background: rgba(255, 68, 68, 0.05); border-radius: 8px; padding: 15px; margin-bottom: 15px; border: 1px solid rgba(255, 68, 68, 0.1);">
+        <div style="font-size: 12px; color: #ff8888; margin-bottom: 5px;">Asset Symbol:</div>
+        <input id="asset-input" type="text" placeholder="e.g. AAPL, SPY, TSLA" style="width: 100%; padding: 10px; background: rgba(255, 68, 68, 0.1); border: 1px solid rgba(255, 68, 68, 0.2); border-radius: 6px; color: #ffffff; font-size: 13px; margin-bottom: 10px;" value="AAPL">
+        <div style="font-size: 12px; color: #ff8888; margin-bottom: 5px;">User ID (optional):</div>
+        <input id="user-id-input" type="text" placeholder="e.g. trader_123" style="width: 100%; padding: 10px; background: rgba(255, 68, 68, 0.1); border: 1px solid rgba(255, 68, 68, 0.2); border-radius: 6px; color: #ffffff; font-size: 13px;" value="dashboard_user">
+    </div>
+    <button id="analyze-btn" style="width: 100%; padding: 12px; background: linear-gradient(135deg, #ff4444, #ff0000); border: none; border-radius: 8px; color: white; font-weight: 600; cursor: pointer; transition: all 0.3s ease;">
+        GENERATE ANALYSIS REPORT
+    </button>
+`;
+
+leftPanel.appendChild(createCard('ASSISTANT', assistantContent));
+
+// Analysis Setup Card
+const analysisSetupContent = document.createElement('div');
+analysisSetupContent.innerHTML = `
+    <div style="display: flex; flex-direction: column; gap: 15px;">
+        <div>
+            <div style="font-size: 12px; color: #8899aa; margin-bottom: 8px;">MARKET REGIME</div>
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <div style="padding: 8px 16px; background: rgba(255, 68, 68, 0.2); border-radius: 8px; border: 1px solid rgba(255, 68, 68, 0.3);">
+                    <div style="font-size: 18px; font-weight: 700; color: #ff4444;">HIGH VOLATILITY</div>
+                </div>
+                <div style="font-size: 12px; color: #8899aa; background: rgba(136, 153, 170, 0.1); padding: 4px 10px; border-radius: 6px;">VIX: 24.5</div>
+            </div>
+        </div>
+        
+        <div>
+            <div style="font-size: 12px; color: #8899aa; margin-bottom: 8px;">RISK INDEX</div>
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <div style="flex: 1;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                        <span style="font-size: 12px; color: #8899aa;">Current</span>
+                        <span style="font-size: 16px; font-weight: 700; color: #ff4444;">72/100</span>
+                    </div>
+                    <div style="height: 8px; background: rgba(255, 68, 68, 0.1); border-radius: 4px; overflow: hidden;">
+                        <div style="width: 72%; height: 100%; background: linear-gradient(90deg, #ff4444, #ff8888); border-radius: 4px;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+`;
+
+leftPanel.appendChild(createCard('ANALYSIS SETUP', analysisSetupContent, { minHeight: '300px' }));
+
+// Center Panel - Main Analysis
+const centerPanel = document.createElement('div');
+centerPanel.style.cssText = `
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+`;
+
+// Market Drivers Card (5 LLM Council Opinions)
+const marketDriversContent = document.createElement('div');
+marketDriversContent.id = 'market-drivers-content';
+marketDriversContent.innerHTML = `
+    <div id="council-opinions" style="display: grid; gap: 15px;">
+        <div style="text-align: center; padding: 40px; color: #8899aa;">
+            <div style="font-size: 48px; margin-bottom: 15px;">🤖</div>
+            <div style="font-size: 16px; margin-bottom: 10px;">Awaiting Analysis</div>
+            <div style="font-size: 13px;">Click "GENERATE ANALYSIS REPORT" to run the 5-agent LLM council</div>
+        </div>
+    </div>
+`;
+
+centerPanel.appendChild(createCard('KEY MARKET DRIVERS', marketDriversContent));
+
+// Live Intelligence Row (Economic Calendar & Behavioral Analysis)
+const liveIntelligenceRow = document.createElement('div');
+liveIntelligenceRow.style.cssText = `
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 20px;
+`;
+
+const liveIntelContent = document.createElement('div');
+liveIntelContent.id = 'live-intel-content';
+liveIntelContent.innerHTML = `
+    <div style="display: flex; flex-direction: column; gap: 15px;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <div style="font-size: 14px; font-weight: 600; color: #ffffff;">Live Market Intelligence</div>
+                <div style="font-size: 12px; color: #8899aa;">AI will automatically search for real-time news, sentiment, and fundamental data for selected assets.</div>
+            </div>
+            <button style="background: linear-gradient(135deg, #ff4444, #ff0000); border: none; border-radius: 8px; color: white; padding: 10px 24px; font-weight: 600; cursor: pointer; font-size: 12px;">
+                RUN LIVE ANALYSIS
+            </button>
+        </div>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 10px;">
+            <div style="background: rgba(255, 68, 68, 0.05); border: 1px solid rgba(255, 68, 68, 0.1); border-radius: 8px; padding: 20px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <div style="font-size: 16px; font-weight: 700; color: #ffffff;">SPX500</div>
+                    <div style="font-size: 14px; color: #44ff88;">+0.8%</div>
+                </div>
+                <div style="font-size: 13px; color: #8899aa; line-height: 1.5;">
+                    The index is testing the psychological 7,000 level but faces a DeMARK 'Bar 9' exhaustion signal.
+                </div>
+                <div style="margin-top: 15px; padding: 10px; background: rgba(255, 68, 68, 0.1); border-radius: 6px;">
+                    <div style="font-size: 11px; color: #ff8888; margin-bottom: 5px;">PRESSURE GAUGE</div>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <div style="flex: 1; height: 6px; background: rgba(255, 68, 68, 0.2); border-radius: 3px; overflow: hidden;">
+                            <div style="width: 58%; height: 100%; background: linear-gradient(90deg, #ff4444, #ff8888);"></div>
+                        </div>
+                        <div style="font-size: 14px; font-weight: 700; color: #ff4444;">58</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div style="background: rgba(68, 136, 255, 0.05); border: 1px solid rgba(68, 136, 255, 0.1); border-radius: 8px; padding: 20px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <div style="font-size: 16px; font-weight: 700; color: #ffffff;">US100</div>
+                    <div style="font-size: 14px; color: #ff4444;">-1.2%</div>
+                </div>
+                <div style="font-size: 13px; color: #8899aa; line-height: 1.5;">
+                    Tech-heavy index under pressure with institutional rotation towards value-oriented cyclicals.
+                </div>
+                <div style="margin-top: 15px; padding: 10px; background: rgba(68, 136, 255, 0.1); border-radius: 6px;">
+                    <div style="font-size: 11px; color: #44aaff; margin-bottom: 5px;">TECHNICAL EXHAUSTION</div>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <div style="flex: 1; height: 6px; background: rgba(68, 136, 255, 0.2); border-radius: 3px; overflow: hidden;">
+                            <div style="width: 72%; height: 100%; background: linear-gradient(90deg, #44aaff, #4488ff);"></div>
+                        </div>
+                        <div style="font-size: 14px; font-weight: 700; color: #44aaff;">72</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+`;
+
+liveIntelligenceRow.appendChild(createCard('LIVE INTELLIGENCE', liveIntelContent));
+
+centerPanel.appendChild(liveIntelligenceRow);
+
+// Right Panel - Strategy & Matrix
+const rightPanel = document.createElement('div');
+rightPanel.style.cssText = `
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+`;
+
+// AI Strategy Card (Narrative & Summary)
+const strategyContent = document.createElement('div');
+strategyContent.id = 'strategy-content';
+strategyContent.innerHTML = `
+    <div style="display: flex; flex-direction: column; gap: 20px;">
+        <div id="narrative-output" style="background: rgba(255, 68, 68, 0.05); border: 1px solid rgba(255, 68, 68, 0.1); border-radius: 8px; padding: 20px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <div style="width: 12px; height: 12px; border-radius: 50%; background: #ff4444;"></div>
+                    <div style="font-size: 14px; font-weight: 600; color: #ffffff;">AI NARRATIVE</div>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <button title="Share on X" style="background: rgba(0, 0, 0, 0.8); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; padding: 6px 12px; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: all 0.3s ease;" onmouseover="this.style.background='rgba(29, 161, 242, 0.2)';" onmouseout="this.style.background='rgba(0, 0, 0, 0.8)';">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="#1DA1F2">
+                            <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+                        </svg>
+                        <span style="font-size: 12px; color: #ffffff; font-weight: 600;">X</span>
+                    </button>
+                    <button title="Share on LinkedIn" style="background: rgba(0, 119, 181, 0.2); border: 1px solid rgba(0, 119, 181, 0.4); border-radius: 6px; padding: 6px 12px; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: all 0.3s ease;" onmouseover="this.style.background='rgba(0, 119, 181, 0.4)';" onmouseout="this.style.background='rgba(0, 119, 181, 0.2)';">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="#0077b5">
+                            <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
+                        </svg>
+                        <span style="font-size: 12px; color: #ffffff; font-weight: 600;">LinkedIn</span>
+                    </button>
+                </div>
+            </div>
+            <div style="font-size: 13px; color: #8899aa; line-height: 1.6;">
+                Awaiting analysis... The AI will generate a personalized trading narrative based on your history and market conditions.
+            </div>
+        </div>
+        
+        <div id="consensus-section">
+            <div style="font-size: 12px; color: #8899aa; margin-bottom: 15px;">CONSENSUS POINTS</div>
+            <div id="consensus-list" style="color: #8899aa; font-size: 13px;">
+                No consensus data available yet
+            </div>
+        </div>
+    </div>
+`;
+
+rightPanel.appendChild(createCard('AI STRATEGY', strategyContent));
+
+// Asset Impact Matrix (Market Context)
+const matrixContent = document.createElement('div');
+matrixContent.id = 'matrix-content';
+matrixContent.innerHTML = `
+    <div style="display: flex; flex-direction: column; gap: 15px;">
+        <div id="market-context" style="font-size: 12px; color: #8899aa; margin-bottom: 10px;">
+            MARKET CONTEXT - Awaiting data...
+        </div>
+        <div id="economic-events" style="display: flex; flex-direction: column; gap: 10px;">
+            <div style="text-align: center; padding: 20px; color: #8899aa; font-size: 13px;">
+                Economic calendar events will appear here after analysis
+            </div>
+        </div>
+    </div>
+`;
+
+rightPanel.appendChild(createCard('ASSET IMPACT MATRIX', matrixContent, { minHeight: '400px' }));
+
+// Behavioral Insights Card (Trade History & Behavioral Flags)
+const behavioralContent = document.createElement('div');
+behavioralContent.id = 'behavioral-content';
+behavioralContent.innerHTML = `
+    <div style="display: flex; flex-direction: column; gap: 15px;">
+        <div id="behavioral-flags" style="background: rgba(68, 136, 255, 0.05); border: 1px solid rgba(68, 136, 255, 0.1); border-radius: 8px; padding: 15px;">
+            <div style="font-size: 12px; color: #44aaff; margin-bottom: 5px;">BEHAVIORAL FLAGS</div>
+            <div style="font-size: 13px; color: #ffffff; line-height: 1.5;">
+                No behavioral patterns detected yet. Analysis will identify trading psychology issues.
+            </div>
+        </div>
+        
+        <div>
+            <div style="font-size: 12px; color: #8899aa; margin-bottom: 10px;">TRADING STATISTICS</div>
+            <div id="trade-stats" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
+                <div style="text-align: center; padding: 15px; background: rgba(255, 68, 68, 0.05); border-radius: 8px;">
+                    <div style="font-size: 18px; font-weight: 700; color: #ff4444;">-</div>
+                    <div style="font-size: 11px; color: #8899aa;">Total Trades</div>
+                </div>
+                <div style="text-align: center; padding: 15px; background: rgba(68, 255, 136, 0.05); border-radius: 8px;">
+                    <div style="font-size: 18px; font-weight: 700; color: #44ff88;">-</div>
+                    <div style="font-size: 11px; color: #8899aa;">Win Rate</div>
+                </div>
+                <div style="text-align: center; padding: 15px; background: rgba(255, 187, 68, 0.05); border-radius: 8px;">
+                    <div style="font-size: 18px; font-weight: 700; color: #ffbb44;">$-</div>
+                    <div style="font-size: 11px; color: #8899aa;">Total P&L</div>
+                </div>
+                <div style="text-align: center; padding: 15px; background: rgba(136, 68, 255, 0.05); border-radius: 8px;">
+                    <div style="font-size: 18px; font-weight: 700; color: #8844ff;">-</div>
+                    <div style="font-size: 11px; color: #8899aa;">Persona</div>
+                </div>
+            </div>
+        </div>
+    </div>
+`;
+
+rightPanel.appendChild(createCard('BEHAVIORAL INSIGHTS', behavioralContent));
+
+// Assemble dashboard
+dashboardGrid.appendChild(leftPanel);
+dashboardGrid.appendChild(centerPanel);
+dashboardGrid.appendChild(rightPanel);
+
+// Footer
+const footer = document.createElement('footer');
+footer.style.cssText = `
+    background: rgba(10, 11, 18, 0.95);
+    border-top: 1px solid rgba(255, 68, 68, 0.2);
+    padding: 20px 40px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+    color: #8899aa;
+    backdrop-filter: blur(10px);
+`;
+
+const footerLeft = document.createElement('div');
+footerLeft.innerHTML = `
+    <div style="margin-bottom: 5px;">DERIV HACKATHON • INTELLIGENT TRADING ANALYST</div>
+    <div>AI-powered market intelligence platform • Version 1.0</div>
+`;
+
+const footerRight = document.createElement('div');
+footerRight.innerHTML = `
+    <div style="text-align: right;">
+        <div style="margin-bottom: 5px;">Data Sources: Bloomberg • Reuters • MarketWatch • TradingView</div>
+        <div>Last Updated: ${new Date().toLocaleTimeString()} • Next Analysis: 15s</div>
+    </div>
+`;
+
+footer.appendChild(footerLeft);
+footer.appendChild(footerRight);
+
+// Add auto-refresh indicator
+const refreshIndicator = document.createElement('div');
+refreshIndicator.style.cssText = `
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: rgba(255, 68, 68, 0.9);
+    color: white;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    z-index: 1000;
+    animation: pulse 2s infinite;
+`;
+refreshIndicator.innerHTML = `
+    <span class="status-indicator status-live"></span>
+    AUTO-REFRESH: 15s
+`;
+
+// Build app
+app.appendChild(header);
+app.appendChild(dashboardGrid);
+app.appendChild(footer);
+app.appendChild(refreshIndicator);
+
+// Initialize
+document.body.style.cssText = 'margin: 0; padding: 0; background: #0a0b12;';
+document.body.appendChild(app);
+
+// API Integration Functions
+async function runAnalysis() {
+    if (isAnalyzing) return;
+    
+    const asset = document.getElementById('asset-input').value.trim();
+    const userId = document.getElementById('user-id-input').value.trim() || 'dashboard_user';
+    
+    if (!asset) {
+        alert('Please enter an asset symbol');
+        return;
+    }
+    
+    isAnalyzing = true;
+    const analyzeBtn = document.getElementById('analyze-btn');
+    const statusEl = document.getElementById('assistant-status');
+    
+    // Update UI to show loading state
+    analyzeBtn.textContent = 'ANALYZING... (60-120s)';
+    analyzeBtn.disabled = true;
+    analyzeBtn.style.opacity = '0.6';
+    statusEl.textContent = 'Running 5-agent LLM council...';
+    statusEl.style.color = '#ff8888';
+    
+    try {
+        const response = await fetch(`${API_BASE_URL}/analyze-asset?asset=${encodeURIComponent(asset)}&user_id=${encodeURIComponent(userId)}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`API Error: ${response.status}`);
+        }
+        
+        currentAnalysisData = await response.json();
+        updateDashboard(currentAnalysisData);
+        
+        statusEl.textContent = 'Analysis Complete ✓';
+        statusEl.style.color = '#44ff88';
+        
+    } catch (error) {
+        console.error('Analysis failed:', error);
+        alert(`Analysis failed: ${error.message}\n\nMake sure the API server is running on ${API_BASE_URL}`);
+        statusEl.textContent = 'Analysis Failed - Check Console';
+        statusEl.style.color = '#ff4444';
+    } finally {
+        isAnalyzing = false;
+        analyzeBtn.textContent = 'GENERATE ANALYSIS REPORT';
+        analyzeBtn.disabled = false;
+        analyzeBtn.style.opacity = '1';
+    }
+}
+
+function updateDashboard(data) {
+    console.log('Updating dashboard with:', data);
+    
+    // Update 5 LLM Council Opinions
+    const councilDiv = document.getElementById('council-opinions');
+    if (data.market_analysis && data.market_analysis.council_opinions) {
+        const opinions = data.market_analysis.council_opinions;
+        councilDiv.innerHTML = opinions.map((opinion, index) => {
+            const agentEmojis = ['🦅', '🔬', '💧', '📊', '🤔'];
+            const agentColors = ['#ff4444', '#44aaff', '#44ff88', '#ffbb44', '#8844ff'];
+            const agentNames = ['Macro Hawk', 'Micro Forensic', 'Flow Detective', 'Tech Interpreter', 'Skeptic'];
+            return `
+                <div style="display: flex; gap: 15px; padding: 15px; background: rgba(255, 68, 68, 0.03); border-radius: 8px; border: 1px solid rgba(255, 68, 68, 0.1); animation: fadeIn 0.5s ease ${index * 0.1}s both;">
+                    <div style="font-size: 32px; min-width: 50px;">${agentEmojis[index]}</div>
+                    <div style="flex: 1;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                            <div style="font-size: 14px; font-weight: 600; color: ${agentColors[index]};">${agentNames[index]}</div>
+                            <div style="background: ${agentColors[index]}20; color: ${agentColors[index]}; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid ${agentColors[index]}40;">
+                                LLM COUNCIL
+                            </div>
+                        </div>
+                        <div style="font-size: 13px; color: #ffffff; line-height: 1.6;">${opinion}</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+    
+    // Update Narrative
+    const narrativeDiv = document.getElementById('narrative-output');
+    if (data.narrative && data.narrative.styled_message) {
+        narrativeDiv.innerHTML = `
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <div style="width: 12px; height: 12px; border-radius: 50%; background: #44ff88;"></div>
+                    <div style="font-size: 14px; font-weight: 600; color: #ffffff;">AI NARRATIVE (${data.persona_selected.toUpperCase()})</div>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <button title="Share on X" style="background: rgba(0, 0, 0, 0.8); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; padding: 6px 12px; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: all 0.3s ease;" onmouseover="this.style.background='rgba(29, 161, 242, 0.2)';" onmouseout="this.style.background='rgba(0, 0, 0, 0.8)';">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="#1DA1F2">
+                            <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+                        </svg>
+                        <span style="font-size: 12px; color: #ffffff; font-weight: 600;">X</span>
+                    </button>
+                    <button title="Share on LinkedIn" style="background: rgba(0, 119, 181, 0.2); border: 1px solid rgba(0, 119, 181, 0.4); border-radius: 6px; padding: 6px 12px; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: all 0.3s ease;" onmouseover="this.style.background='rgba(0, 119, 181, 0.4)';" onmouseout="this.style.background='rgba(0, 119, 181, 0.2)';">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="#0077b5">
+                            <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
+                        </svg>
+                        <span style="font-size: 12px; color: #ffffff; font-weight: 600;">LinkedIn</span>
+                    </button>
+                </div>
+            </div>
+            <div style="font-size: 13px; color: #ffffff; line-height: 1.6;">
+                ${data.narrative.styled_message || data.narrative.summary || 'No narrative generated'}
+            </div>
+        `;
+    }
+    
+    // Update Consensus Points
+    const consensusList = document.getElementById('consensus-list');
+    if (data.market_analysis && data.market_analysis.consensus) {
+        consensusList.innerHTML = data.market_analysis.consensus.map(point => `
+            <div style="display: flex; gap: 10px; margin-bottom: 10px; padding: 10px; background: rgba(68, 255, 136, 0.05); border-radius: 6px; border: 1px solid rgba(68, 255, 136, 0.1);">
+                <div style="color: #44ff88; font-size: 16px;">✓</div>
+                <div style="font-size: 13px; color: #ffffff; line-height: 1.5;">${point}</div>
+            </div>
+        `).join('');
+    }
+    
+    // Update Trade Statistics
+    if (data.trade_history) {
+        const th = data.trade_history;
+        document.getElementById('trade-stats').innerHTML = `
+            <div style="text-align: center; padding: 15px; background: rgba(255, 68, 68, 0.05); border-radius: 8px;">
+                <div style="font-size: 18px; font-weight: 700; color: #ff4444;">${th.total_trades}</div>
+                <div style="font-size: 11px; color: #8899aa;">Total Trades</div>
+            </div>
+            <div style="text-align: center; padding: 15px; background: rgba(68, 255, 136, 0.05); border-radius: 8px;">
+                <div style="font-size: 18px; font-weight: 700; color: #44ff88;">${th.win_rate.toFixed(1)}%</div>
+                <div style="font-size: 11px; color: #8899aa;">Win Rate</div>
+            </div>
+            <div style="text-align: center; padding: 15px; background: rgba(255, 187, 68, 0.05); border-radius: 8px;">
+                <div style="font-size: 18px; font-weight: 700; color: ${th.total_pnl >= 0 ? '#44ff88' : '#ff4444'}">$${th.total_pnl.toFixed(2)}</div>
+                <div style="font-size: 11px; color: #8899aa;">Total P&L</div>
+            </div>
+            <div style="text-align: center; padding: 15px; background: rgba(136, 68, 255, 0.05); border-radius: 8px;">
+                <div style="font-size: 14px; font-weight: 700; color: #8844ff;">${data.persona_selected.toUpperCase()}</div>
+                <div style="font-size: 11px; color: #8899aa;">Persona</div>
+            </div>
+        `;
+    }
+    
+    // Update Behavioral Flags
+    const behavioralFlags = document.getElementById('behavioral-flags');
+    if (data.behavioral_analysis && data.behavioral_analysis.flags) {
+        const flags = data.behavioral_analysis.flags;
+        if (flags.length > 0) {
+            behavioralFlags.innerHTML = `
+                <div style="font-size: 12px; color: #44aaff; margin-bottom: 10px;">BEHAVIORAL FLAGS (${flags.length})</div>
+                ${flags.map(flag => `
+                    <div style="margin-bottom: 10px; padding: 10px; background: rgba(255, 68, 68, 0.1); border-radius: 6px; border: 1px solid rgba(255, 68, 68, 0.2);">
+                        <div style="font-size: 12px; font-weight: 600; color: #ff8888; margin-bottom: 5px;">${flag.pattern || 'Behavioral Pattern'}</div>
+                        <div style="font-size: 13px; color: #ffffff; line-height: 1.5;">${flag.message || flag}</div>
+                    </div>
+                `).join('')}
+            `;
+        } else {
+            behavioralFlags.innerHTML = `
+                <div style="font-size: 12px; color: #44aaff; margin-bottom: 5px;">BEHAVIORAL FLAGS</div>
+                <div style="font-size: 13px; color: #44ff88; line-height: 1.5;">✓ No concerning behavioral patterns detected</div>
+            `;
+        }
+    }
+    
+    // Update Market Context and Economic Events
+    const marketContext = document.getElementById('market-context');
+    const economicEvents = document.getElementById('economic-events');
+    
+    if (data.market_analysis && data.market_analysis.market_context) {
+        const mc = data.market_analysis.market_context;
+        marketContext.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div style="font-size: 14px; font-weight: 600; color: #ffffff;">${data.asset}</div>
+                <div style="display: flex; gap: 15px; align-items: center;">
+                    <div style="font-size: 14px; color: ${mc.move_direction === 'UP' ? '#44ff88' : '#ff4444'};">
+                        ${mc.move_direction === 'UP' ? '↗' : '↘'} ${mc.change_pct}%
+                    </div>
+                    <div style="font-size: 14px; color: #8899aa;">$${mc.price}</div>
+                    <div style="font-size: 12px; color: #8899aa;">Vol: ${Number(mc.volume).toLocaleString()}</div>
+                </div>
+            </div>
+        `;
+    }
+    
+    if (data.economic_calendar && data.economic_calendar.economic_events) {
+        economicEvents.innerHTML = data.economic_calendar.economic_events.map((event, index) => `
+            <div style="padding: 12px; background: rgba(255, 187, 68, 0.05); border-radius: 8px; border: 1px solid rgba(255, 187, 68, 0.1); animation: fadeIn 0.5s ease ${index * 0.1}s both;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <div style="font-size: 18px;">📅</div>
+                    <div style="font-size: 13px; color: #ffffff;">${event}</div>
+                </div>
+            </div>
+        `).join('');
+        
+        // Add recent news if available
+        if (data.economic_calendar.recent_news && data.economic_calendar.recent_news.length > 0) {
+            economicEvents.innerHTML += `<div style="margin-top: 15px; font-size: 12px; color: #8899aa; margin-bottom: 10px;">RECENT NEWS</div>`;
+            data.economic_calendar.recent_news.forEach((news, index) => {
+                if (news.title) {
+                    economicEvents.innerHTML += `
+                        <div style="padding: 10px; background: rgba(68, 136, 255, 0.05); border-radius: 8px; border: 1px solid rgba(68, 136, 255, 0.1); margin-bottom: 8px; animation: fadeIn 0.5s ease ${(index + 3) * 0.1}s both;">
+                            <div style="font-size: 12px; color: #44aaff; line-height: 1.5;">${news.title}</div>
+                        </div>
+                    `;
+                }
+            });
+        }
+    }
+}
+
+// Attach event listener to analyze button
+setTimeout(() => {
+    const analyzeBtn = document.getElementById('analyze-btn');
+    if (analyzeBtn) {
+        analyzeBtn.addEventListener('click', runAnalysis);
+    }
+}, 100);
+
+// Simulate live updates
+setInterval(() => {
+    const pressureElements = document.querySelectorAll('[data-pressure]');
+    pressureElements.forEach(el => {
+        const current = parseInt(el.textContent);
+        const change = Math.floor(Math.random() * 5) - 2;
+        const newValue = Math.max(0, Math.min(100, current + change));
+        el.textContent = newValue;
+        
+        // Update progress bar width
+        const bar = el.parentElement?.querySelector('.progress-bar');
+        if (bar) {
+            bar.style.width = `${newValue}%`;
+        }
+    });
+}, 5000);

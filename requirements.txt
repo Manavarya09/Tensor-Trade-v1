@@ -1,0 +1,19 @@
+# Trading Agent System Dependencies
+# ==================================
+
+# Core dependencies
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+pydantic>=2.0.0
+requests>=2.31.0
+python-dotenv>=1.0.0
+
+# Optional dependencies for full functionality
+# Uncomment and install if you want to use these features:
+
+# For NarratorAgent (AI-powered session summaries)
+# groq>=0.4.0
+
+# For development
+# pytest>=7.4.0
+# black>=23.0.0
