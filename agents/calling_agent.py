@@ -35,4 +35,5 @@ class CallingAgent:
         # Query LLM here (similar to other agents)
         context["market_call"] = "BUY"  # Placeholder
 
-        return context
+        return context</content>
+<parameter name="filePath">/Users/manavaryasingh/TensorTrade/agents/calling_agent.py
