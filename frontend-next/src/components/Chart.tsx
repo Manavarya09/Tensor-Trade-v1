@@ -9,11 +9,12 @@ interface ChartProps {
 
 export const Chart: React.FC<ChartProps> = ({ data }) => {
   const chartContainerRef = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<any>(null);
 
   useEffect(() => {
     if (!chartContainerRef.current) return;
 
-    const chart = createChart(chartContainerRef.current, {
+    const chart: any = createChart(chartContainerRef.current, {
       layout: {
         background: { type: ColorType.Solid, color: '#ffffff' },
         textColor: '#000000',
@@ -26,22 +27,29 @@ export const Chart: React.FC<ChartProps> = ({ data }) => {
       height: 300,
     });
 
-    const candlestickSeries = chart.addCandlestickSeries({
-      upColor: '#ffffff',
-      downColor: '#ff4500', // Orange-ish red for down
-      borderVisible: true,
-      wickUpColor: '#000000',
-      wickDownColor: '#ff4500',
-      borderColor: '#000000',
-    });
+    chartRef.current = chart;
 
-    // Generate dummy data if none provided
-    const initialData = data || generateData();
-    candlestickSeries.setData(initialData);
+    try {
+      const candlestickSeries = chart.addCandlestickSeries({
+        upColor: '#ffffff',
+        downColor: '#ff4500', // Orange-ish red for down
+        borderVisible: true,
+        wickUpColor: '#000000',
+        wickDownColor: '#ff4500',
+        borderUpColor: '#000000',
+        borderDownColor: '#000000',
+      });
+
+      // Generate dummy data if none provided
+      const initialData = data || generateData();
+      candlestickSeries.setData(initialData);
+    } catch (error) {
+      console.error('Error initializing chart:', error);
+    }
 
     const handleResize = () => {
-        if (chartContainerRef.current) {
-            chart.applyOptions({ width: chartContainerRef.current.clientWidth });
+        if (chartContainerRef.current && chartRef.current) {
+            chartRef.current.applyOptions({ width: chartContainerRef.current.clientWidth });
         }
     };
 
@@ -49,7 +57,9 @@ export const Chart: React.FC<ChartProps> = ({ data }) => {
 
     return () => {
       window.removeEventListener('resize', handleResize);
-      chart.remove();
+      if (chartRef.current) {
+        chartRef.current.remove();
+      }
     };
   }, [data]);
 
