@@ -829,6 +829,316 @@ def get_improvement_metrics():
     """Get self-improvement metrics."""
     return self_improvement_service.analyze_performance()
 
+
+# ===========================================================================
+# Virtual Trading, Portfolio, Policies, Investments, Watchlist, Learning APIs
+# ===========================================================================
+from services.virtual_trading import (
+    get_portfolio_service,
+    get_policy_service,
+    get_learning_service,
+    get_watchlist_service,
+    get_all_stock_prices,
+    get_trade_history as get_virtual_trade_history,
+    STOCK_DATABASE,
+)
+
+
+# --- Market Data ---
+@app.get("/api/stocks")
+def list_stocks():
+    """Get all available stocks with current prices."""
+    return {"stocks": list(get_all_stock_prices().values())}
+
+
+@app.get("/api/stocks/{symbol}")
+def get_stock(symbol: str):
+    """Get single stock info."""
+    prices = get_all_stock_prices()
+    symbol = symbol.upper()
+    if symbol not in prices:
+        raise HTTPException(status_code=404, detail=f"Symbol {symbol} not found")
+    return prices[symbol]
+
+
+# --- Portfolio ---
+@app.get("/api/portfolio/{user_id}")
+def get_portfolio(user_id: str):
+    """Get user portfolio summary with holdings."""
+    svc = get_portfolio_service()
+    return svc.get_portfolio_summary(user_id)
+
+
+# --- Trading ---
+class TradeRequest(BaseModel):
+    user_id: str = "default_user"
+    symbol: str
+    action: str  # "buy" or "sell"
+    quantity: int
+
+
+@app.post("/api/trade")
+def execute_trade(req: TradeRequest):
+    """Execute a virtual trade (buy/sell)."""
+    svc = get_portfolio_service()
+    policy_svc = get_policy_service()
+    
+    # Check policies first
+    compliance = policy_svc.evaluate_trade_against_policies(
+        req.user_id, req.symbol.upper(), req.action, req.quantity
+    )
+    if not compliance["allowed"]:
+        raise HTTPException(status_code=400, detail={
+            "error": "Policy violation",
+            "violations": compliance["violations"],
+        })
+    
+    try:
+        result = svc.execute_trade(req.user_id, req.symbol, req.action, req.quantity)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/trades/{user_id}")
+def get_trades(user_id: str):
+    """Get trade history for a user."""
+    return {"trades": get_virtual_trade_history(user_id)}
+
+
+# --- Policies ---
+class CreatePolicyRequest(BaseModel):
+    user_id: str = "default_user"
+    name: str
+    policy_type: str
+    rules: List[str]
+    stop_loss: Optional[float] = None
+    take_profit: Optional[float] = None
+    max_allocation: Optional[float] = None
+    shariah_only: bool = False
+
+
+class UpdatePolicyRequest(BaseModel):
+    name: Optional[str] = None
+    rules: Optional[List[str]] = None
+    stop_loss: Optional[float] = None
+    take_profit: Optional[float] = None
+    max_allocation: Optional[float] = None
+    shariah_only: Optional[bool] = None
+    status: Optional[str] = None
+
+
+@app.get("/api/policies/{user_id}")
+def get_policies(user_id: str):
+    """Get all policies for a user."""
+    svc = get_policy_service()
+    return {"policies": svc.get_policies(user_id)}
+
+
+@app.post("/api/policies")
+def create_policy(req: CreatePolicyRequest):
+    """Create new trading policy."""
+    svc = get_policy_service()
+    policy = svc.create_policy(
+        user_id=req.user_id,
+        name=req.name,
+        policy_type=req.policy_type,
+        rules=req.rules,
+        stop_loss=req.stop_loss,
+        take_profit=req.take_profit,
+        max_allocation=req.max_allocation,
+        shariah_only=req.shariah_only,
+    )
+    return {"policy": policy}
+
+
+@app.put("/api/policies/{user_id}/{policy_id}")
+def update_policy(user_id: str, policy_id: str, req: UpdatePolicyRequest):
+    """Update an existing policy."""
+    svc = get_policy_service()
+    updates = {k: v for k, v in req.model_dump().items() if v is not None}
+    try:
+        return {"policy": svc.update_policy(user_id, policy_id, updates)}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.delete("/api/policies/{user_id}/{policy_id}")
+def delete_policy(user_id: str, policy_id: str):
+    """Delete a policy."""
+    svc = get_policy_service()
+    svc.delete_policy(user_id, policy_id)
+    return {"success": True}
+
+
+@app.post("/api/policies/{user_id}/{policy_id}/toggle")
+def toggle_policy(user_id: str, policy_id: str):
+    """Toggle a policy active/inactive."""
+    svc = get_policy_service()
+    try:
+        return {"policy": svc.toggle_policy(user_id, policy_id)}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+# --- Watchlist ---
+@app.get("/api/watchlist/{user_id}")
+def get_watchlist(user_id: str):
+    """Get user watchlist."""
+    svc = get_watchlist_service()
+    return {"watchlist": svc.get_watchlist(user_id)}
+
+
+@app.post("/api/watchlist/{user_id}/{symbol}")
+def add_to_watchlist(user_id: str, symbol: str):
+    """Add symbol to watchlist."""
+    svc = get_watchlist_service()
+    try:
+        svc.add_to_watchlist(user_id, symbol)
+        return {"success": True, "watchlist": svc.get_watchlist(user_id)}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.delete("/api/watchlist/{user_id}/{symbol}")
+def remove_from_watchlist(user_id: str, symbol: str):
+    """Remove symbol from watchlist."""
+    svc = get_watchlist_service()
+    svc.remove_from_watchlist(user_id, symbol)
+    return {"success": True, "watchlist": svc.get_watchlist(user_id)}
+
+
+# --- Self-Learning ---
+@app.get("/api/learning/metrics")
+def get_learning_metrics(user_id: Optional[str] = None):
+    """Get self-learning engine metrics."""
+    svc = get_learning_service()
+    return svc.get_metrics(user_id)
+
+
+@app.get("/api/learning/metrics/{user_id}")
+def get_user_learning_metrics(user_id: str):
+    """Get self-learning metrics for a specific user."""
+    svc = get_learning_service()
+    return svc.get_metrics(user_id)
+
+
+class RecordOutcomeRequest(BaseModel):
+    symbol: str
+    actual_change_pct: float
+
+
+@app.post("/api/learning/outcome")
+def record_learning_outcome(req: RecordOutcomeRequest):
+    """Record a real outcome to help the agent learn."""
+    svc = get_learning_service()
+    updated = svc.record_outcome(req.symbol.upper(), req.actual_change_pct)
+    return {"updated_predictions": updated, "metrics": svc.get_metrics()}
+
+
+# --- Investments (Shariah-compliant stock screener) ---
+@app.get("/api/investments/screener")
+def shariah_screener(halal_only: bool = False):
+    """Get Shariah-compliant stock screener data."""
+    prices = get_all_stock_prices()
+    results = []
+    for symbol, data in prices.items():
+        info = STOCK_DATABASE[symbol]
+        compliant = info["shariah"]
+        if halal_only and not compliant:
+            continue
+        
+        debt = info["debt_ratio"]
+        rating = "Excellent" if compliant and debt < 0.15 else "Good" if compliant and debt < 0.25 else "Non-Compliant" if not compliant else "Fair"
+        
+        results.append({
+            **data,
+            "shariah_compliant": compliant,
+            "debt_ratio": round(debt * 100, 0),
+            "halal_revenue": info["halal_revenue"],
+            "rating": rating,
+        })
+    return {"stocks": results}
+
+
+@app.get("/api/investments/portfolios")
+def curated_portfolios():
+    """Get curated halal investment portfolios."""
+    portfolios = [
+        {
+            "id": "halal-growth",
+            "name": "Halal Growth Portfolio",
+            "description": "Diversified portfolio of high-growth Shariah-compliant stocks",
+            "min_investment": 5000,
+            "expected_return": "12-18% annually",
+            "risk_level": "Medium",
+            "holdings": ["AAPL", "MSFT", "TSLA", "NVDA", "AMZN"],
+            "compliance": "100%",
+        },
+        {
+            "id": "islamic-tech",
+            "name": "Islamic Tech Fund",
+            "description": "Focus on technology companies meeting strict Shariah guidelines",
+            "min_investment": 10000,
+            "expected_return": "15-22% annually",
+            "risk_level": "Medium-High",
+            "holdings": ["NVDA", "TSLA", "AAPL", "MSFT"],
+            "compliance": "100%",
+        },
+        {
+            "id": "ethical-income",
+            "name": "Ethical Income Generator",
+            "description": "Dividend-focused Shariah-compliant investments",
+            "min_investment": 3000,
+            "expected_return": "8-12% annually",
+            "risk_level": "Low-Medium",
+            "holdings": ["JNJ", "PG", "WMT", "V", "HD"],
+            "compliance": "100%",
+        },
+    ]
+    return {"portfolios": portfolios}
+
+
+class InvestInPortfolioRequest(BaseModel):
+    user_id: str = "default_user"
+    portfolio_id: str
+    amount: float
+
+
+@app.post("/api/investments/invest")
+def invest_in_portfolio(req: InvestInPortfolioRequest):
+    """Invest in a curated portfolio – buys proportional shares of each stock."""
+    portfolios_data = curated_portfolios()["portfolios"]
+    portfolio = next((p for p in portfolios_data if p["id"] == req.portfolio_id), None)
+    if not portfolio:
+        raise HTTPException(status_code=404, detail="Portfolio not found")
+    
+    if req.amount < portfolio["min_investment"]:
+        raise HTTPException(status_code=400, detail=f"Minimum investment is ${portfolio['min_investment']}")
+    
+    svc = get_portfolio_service()
+    stocks = portfolio["holdings"]
+    per_stock = req.amount / len(stocks)
+    
+    trades = []
+    for symbol in stocks:
+        from services.virtual_trading import _get_simulated_price
+        price = _get_simulated_price(symbol)
+        qty = max(1, int(per_stock / price))
+        try:
+            result = svc.execute_trade(req.user_id, symbol, "buy", qty)
+            trades.append(result["trade"])
+        except ValueError as e:
+            trades.append({"symbol": symbol, "error": str(e)})
+    
+    return {
+        "success": True,
+        "portfolio_name": portfolio["name"],
+        "trades": trades,
+        "total_invested": sum(t.get("total", 0) for t in trades if "total" in t),
+    }
+
+
 @app.get("/health")
 def health_check():
     """Health check endpoint with environment diagnostics."""

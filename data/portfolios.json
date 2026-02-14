@@ -1,0 +1,15 @@
+{
+  "default_user": {
+    "user_id": "default_user",
+    "cash_balance": 98905.66,
+    "positions": {
+      "AAPL": {
+        "symbol": "AAPL",
+        "quantity": 6,
+        "average_cost": 182.39,
+        "first_purchase": "2026-02-14T11:47:47.387509"
+      }
+    },
+    "created_at": "2026-02-14T11:47:40.709827"
+  }
+}

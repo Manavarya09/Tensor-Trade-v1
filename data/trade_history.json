@@ -1,0 +1,24 @@
+[
+  {
+    "id": "72df886a",
+    "user_id": "default_user",
+    "symbol": "AAPL",
+    "action": "BUY",
+    "quantity": 5,
+    "price": 182.39,
+    "total": 911.95,
+    "timestamp": "2026-02-14T11:47:47.387904",
+    "realized_pnl": null
+  },
+  {
+    "id": "c3d1a137",
+    "user_id": "default_user",
+    "symbol": "AAPL",
+    "action": "BUY",
+    "quantity": 1,
+    "price": 182.39,
+    "total": 182.39,
+    "timestamp": "2026-02-14T11:47:52.872168",
+    "realized_pnl": null
+  }
+]
