@@ -19,28 +19,28 @@ export default function LandingScreen({ navigation }: any) {
         {/* Hero */}
         <View style={styles.heroSection}>
             <View style={styles.badge}>
-                <Text style={styles.badgeText}>SYSTEM V2.0 ONLINE</Text>
+                <Text style={styles.badgeText}>VERSION 2.0 NOW LIVE</Text>
             </View>
             <Text style={styles.heroTitle}>
-                ALGORITHMIC{'\n'}
-                <Text style={styles.textOrangeStroke}>DOMINANCE</Text>
+                AI POWERED{'\n'}
+                <Text style={styles.heroTitleOrange}>TRADING</Text>
             </Text>
             <View style={styles.divider} />
             <Text style={styles.heroSubtitle}>
-                DEPLOY AUTONOMOUS MULTI-AGENT SYSTEMS. ZERO LATENCY. PURE LOGIC.
+                SELF-IMPROVING MULTI-AGENT SYSTEM. ANALYZES MARKETS. MANAGES PORTFOLIOS. ZERO EMOTIONS. PURE LOGIC.
             </Text>
         </View>
 
         {/* Action Buttons */}
         <View style={styles.actionContainer}>
             <BrutalistButton
-                title="INITIALIZE SYSTEM"
+                title="START TRADING NOW"
                 onPress={() => navigation.navigate('Auth')}
                 variant="primary"
                 style={styles.mainButton}
             />
             <BrutalistButton
-                title="LOGIN"
+                title="EXPLORE PRODUCTS"
                 onPress={() => navigation.navigate('Auth')}
                 variant="outline"
             />
@@ -129,11 +129,11 @@ const styles = StyleSheet.create({
   textOrange: {
     color: '#FF5722',
   },
-  textOrangeStroke: {
-    color: '#FF5722',
-    // In React Native, text stroke is not fully supported on all platforms the same way as web
-    // But we can simulate or just use color.
-    textDecorationLine: 'underline',
+  heroTitleOrange: {
+    color: '#FFFFFF',
+    backgroundColor: '#FF5722',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
   heroSection: {
     marginBottom: 40,
@@ -166,13 +166,11 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   heroSubtitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 'bold',
     color: '#000',
-    lineHeight: 24,
-    borderLeftWidth: 4,
-    borderLeftColor: '#FF5722',
-    paddingLeft: 16,
+    lineHeight: 22,
+    textAlign: 'center',
   },
   actionContainer: {
     gap: 16,
